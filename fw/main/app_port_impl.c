@@ -16,6 +16,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "esp_random.h"     // esp_random()：摇卦掷币的随机源
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -32,6 +33,14 @@ bool app_port_lvgl_lock(int timeout_ms)
 void app_port_lvgl_unlock(void)
 {
     bsp_lvgl_unlock();
+}
+
+// ---------------------------------------------------------------------------
+// 随机数：直接取芯片硬件随机源
+// ---------------------------------------------------------------------------
+uint32_t app_port_random(void)
+{
+    return esp_random();
 }
 
 // ---------------------------------------------------------------------------

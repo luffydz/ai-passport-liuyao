@@ -536,15 +536,18 @@ const char* getLinePosMeaning(uint8_t lineIdx) {
   return LINE_POS_MEANING[lineIdx];
 }
 
-const char* getElemRelationText(uint8_t upper, uint8_t lower, uint8_t movingLine) {
-  if (movingLine >= 6 || upper >= 8 || lower >= 8) return "";
-  // 动爻在 0..2 → 动的是下卦；在 3..5 → 动的是上卦
-  const char* before = (movingLine < 3) ? getTrigramElement(lower)
-                                        : getTrigramElement(upper);
+const char* getElemRelationText(uint8_t upper, uint8_t lower, liuyao_moving_t moving) {
+  if (upper >= 8 || lower >= 8) return "";
+  // 以【主爻】（最高的动爻）所在的卦作为"变动的那一卦"。
+  // 多动爻时不做逐爻展开 —— 卦级五行走向本就是简化判断，取主爻与变占法一致。
+  const int mv = getPrimaryMovingLine(moving);
+  if (mv < 0) return "";                    // 六爻安静：没有"走向"可说
+  const char* before = (mv < 3) ? getTrigramElement(lower)
+                                : getTrigramElement(upper);
   uint8_t cu, cl;
-  getChangedHexagram(upper, lower, movingLine, &cu, &cl);
-  const char* after = (movingLine < 3) ? getTrigramElement(cl)
-                                       : getTrigramElement(cu);
+  getChangedHexagram(upper, lower, moving, &cu, &cl);
+  const char* after = (mv < 3) ? getTrigramElement(cl)
+                               : getTrigramElement(cu);
   return ELEM_RELATION_TEXT[five_elem_relation(before, after)];
 }
 
@@ -572,14 +575,16 @@ const char* getLinePosPlain(uint8_t lineIdx) {
   return LINE_POS_PLAIN[lineIdx];
 }
 
-const char* getElemRelationPlain(uint8_t upper, uint8_t lower, uint8_t movingLine) {
-  if (movingLine >= 6 || upper >= 8 || lower >= 8) return "";
-  const char* before = (movingLine < 3) ? getTrigramElement(lower)
-                                        : getTrigramElement(upper);
+const char* getElemRelationPlain(uint8_t upper, uint8_t lower, liuyao_moving_t moving) {
+  if (upper >= 8 || lower >= 8) return "";
+  const int mv = getPrimaryMovingLine(moving);
+  if (mv < 0) return "";                    // 六爻安静
+  const char* before = (mv < 3) ? getTrigramElement(lower)
+                                : getTrigramElement(upper);
   uint8_t cu, cl;
-  getChangedHexagram(upper, lower, movingLine, &cu, &cl);
-  const char* after = (movingLine < 3) ? getTrigramElement(cl)
-                                       : getTrigramElement(cu);
+  getChangedHexagram(upper, lower, moving, &cu, &cl);
+  const char* after = (mv < 3) ? getTrigramElement(cl)
+                               : getTrigramElement(cu);
   return ELEM_RELATION_PLAIN[five_elem_relation(before, after)];
 }
 
@@ -624,28 +629,15 @@ void getHexagram(uint8_t upperIdx, uint8_t lowerIdx, HexagramData *out) {
   out->judgment = HEX_JUDGE[upperIdx][lowerIdx];
 }
 
-void generateHexagramFromDigits(const uint8_t digits[3],
-                                 uint8_t *outUpper, uint8_t *outLower,
-                                 uint8_t *outMovingLine) {
-  uint8_t a = digits[0]; // 百位
-  uint8_t b = digits[1]; // 十位
-  uint8_t c = digits[2]; // 个位
-
-  *outUpper = a % 8;
-  if (*outUpper == 0) *outUpper = 7;
-
-  *outLower = b % 8;
-  if (*outLower == 0) *outLower = 7;
-
-  uint8_t moving = c % 6;
-  if (moving == 0) moving = 6;
-
-  *outMovingLine = moving - 1; // 转为 0..5
-}
+// 注：原先这里有个 generateHexagramFromDigits（三位数 → 卦）。
+// 那套做法被废弃了 —— 它在"摇卦"的外壳下偷偷决定了卦象，用户摇的其实是空。
+// 现在卦完全由六次掷币产生，见 view_liuyao.c 的 cast 部分。
 
 void getChangedHexagram(uint8_t originalUpper, uint8_t originalLower,
-                         uint8_t movingLine,
-                         uint8_t *outUpper, uint8_t *outLower) {
+                        liuyao_moving_t moving,
+                        uint8_t *outUpper, uint8_t *outLower) {
+  if (originalUpper >= 8 || originalLower >= 8 || !outUpper || !outLower) return;
+
   // 构建 6 爻
   uint8_t lines[6];
   for (int i = 0; i < 3; i++) {
@@ -653,8 +645,10 @@ void getChangedHexagram(uint8_t originalUpper, uint8_t originalLower,
     lines[i+3] = TRIGRAM_LINES[originalUpper][i]; // 上卦四、五、上
   }
 
-  // 翻转动爻
-  lines[movingLine] = 1 - lines[movingLine];
+  // 逐爻翻转发动的那些爻（可能不止一个，也可能一个都没有）
+  for (int i = 0; i < 6; i++) {
+    if (moving & LIUYAO_MOV(i)) lines[i] = (uint8_t)(1 - lines[i]);
+  }
 
   // 拆回下卦（lines[0..2]）和上卦（lines[3..5]）
   *outLower = 7; // 默认坤
@@ -668,6 +662,78 @@ void getChangedHexagram(uint8_t originalUpper, uint8_t originalLower,
     if (matchLower) *outLower = i;
     if (matchUpper) *outUpper = i;
   }
+}
+
+// 由六爻（lines[0]=初 … lines[5]=上，1=阳）反查上下卦。
+// 摇卦是逐爻掷出来的，攒满六爻后要靠它还原出是哪一卦。
+void getHexagramFromLines(const uint8_t lines[6], uint8_t *outUpper, uint8_t *outLower) {
+  if (!lines || !outUpper || !outLower) return;
+  *outLower = 7;   // 默认坤
+  *outUpper = 7;
+  for (uint8_t i = 0; i < 8; i++) {
+    bool matchLower = true, matchUpper = true;
+    for (int j = 0; j < 3; j++) {
+      if (TRIGRAM_LINES[i][j] != (lines[j] ? 1 : 0))     matchLower = false;
+      if (TRIGRAM_LINES[i][j] != (lines[j+3] ? 1 : 0))   matchUpper = false;
+    }
+    if (matchLower) *outLower = i;
+    if (matchUpper) *outUpper = i;
+  }
+}
+
+// 主爻 = 动爻里位置最高的那个。变占法多处讲「以上爻为主」，都取它。
+int getPrimaryMovingLine(liuyao_moving_t moving) {
+  for (int i = 5; i >= 0; i--) {
+    if (moving & LIUYAO_MOV(i)) return i;
+  }
+  return -1;                          // 六爻安静
+}
+
+// ===== 变占规则（朱熹《易学启蒙》）=====
+// 只按动爻【个数】分档，位置细节留给调用方（主爻用 getPrimaryMovingLine）。
+bian_zhan_t getBianZhanRule(liuyao_moving_t moving) {
+  int n = 0;
+  for (int i = 0; i < 6; i++) {
+    if (moving & LIUYAO_MOV(i)) n++;
+  }
+  switch (n) {
+    case 0:  return BIAN_ZHAN_JING;
+    case 1:  return BIAN_ZHAN_ONE_YAO;
+    case 2:  return BIAN_ZHAN_TWO_YAO;
+    case 3:  return BIAN_ZHAN_THREE_GUA;
+    case 4:  return BIAN_ZHAN_FOUR;
+    case 5:  return BIAN_ZHAN_FIVE;
+    default: return BIAN_ZHAN_SIX;
+  }
+}
+
+const char *getBianZhanText(uint8_t upper, uint8_t lower, liuyao_moving_t moving) {
+  switch (getBianZhanRule(moving)) {
+    case BIAN_ZHAN_JING:      return "六爻安静，看本卦卦辞";
+    case BIAN_ZHAN_ONE_YAO:   return "一爻动，看该爻爻辞";
+    case BIAN_ZHAN_TWO_YAO:   return "两爻动，以上爻为主";
+    case BIAN_ZHAN_THREE_GUA: return "三爻动，看两卦卦辞";
+    case BIAN_ZHAN_FOUR:      return "四爻动，看变卦不动之爻";
+    case BIAN_ZHAN_FIVE:      return "五爻动，看变卦不动之爻";
+    default:
+      return (getYongJiuYongLiu(upper, lower)[0] != 0)
+                 ? "六爻皆动，看用九用六"
+                 : "六爻皆动，看变卦卦辞";
+  }
+}
+
+// 用九 / 用六：只有乾、坤两卦有专用辞（其余卦返回空串）。
+// 乾为天 = 上乾(0)下乾(0)；坤为地 = 上坤(7)下坤(7)。
+const char *getYongJiuYongLiu(uint8_t upper, uint8_t lower) {
+  if (upper == 0 && lower == 0) return "见群龙无首吉";   // 乾·用九
+  if (upper == 7 && lower == 7) return "利永贞";         // 坤·用六
+  return "";
+}
+
+const char *getYongJiuYongLiuPlain(uint8_t upper, uint8_t lower) {
+  if (upper == 0 && lower == 0) return "群龙无首，反而吉利";
+  if (upper == 7 && lower == 7) return "守持正道就有利";
+  return "";
 }
 
 const char* getLineJudgment(uint8_t upper, uint8_t lower, uint8_t lineIdx) {
@@ -831,12 +897,12 @@ static int liuqin_of(int palace_wx, int line_wx) {
   return LIUQIN_QICAI;                                         // 我克它
 }
 
-void getLiuyaoChart(uint8_t upper, uint8_t lower, uint8_t movingLine,
+void getLiuyaoChart(uint8_t upper, uint8_t lower, liuyao_moving_t moving,
                     liuyao_chart_t* out)
 {
   if (!out) return;
   memset(out, 0, sizeof(*out));
-  if (upper >= 8 || lower >= 8 || movingLine >= 6) return;
+  if (upper >= 8 || lower >= 8) return;
 
   // 1) 定卦宫与宫内位次
   const uint8_t key = (uint8_t)(upper * 8 + lower);
@@ -870,7 +936,7 @@ void getLiuyaoChart(uint8_t upper, uint8_t lower, uint8_t movingLine,
     out->lines[i].wuxing    = GZ_WUXING[wx];
     out->lines[i].liuqin    = LIUQIN_NAME[liuqin_of(palace_wx, wx)];
     out->lines[i].is_yang   = TRIGRAM_LINES[tri][k] != 0;
-    out->lines[i].is_moving = (i == (int)movingLine);
+    out->lines[i].is_moving = (moving & LIUYAO_MOV(i)) != 0;
     out->lines[i].shiying   = (i == SHI_POS[slot])  ? 1
                             : (i == YING_POS[slot]) ? 2 : 0;
   }

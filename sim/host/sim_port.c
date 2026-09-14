@@ -5,6 +5,8 @@
 #include "app_port.h"
 
 #include <stdio.h>
+#include <stdlib.h>     // rand/srand/atoi/getenv：模拟器随机数
+#include <time.h>       // time()：默认种子
 
 // 模拟器固定假数据：真机读 CW2017，这里返回一个好看的数值
 int app_port_battery_percent(void)
@@ -51,6 +53,22 @@ bool app_port_lvgl_lock(int timeout_ms)
 {
     (void)timeout_ms;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// 随机数：模拟器用 PRNG（真机对应 esp_random）
+// 设 SIM_SEED=<数字> 可固定种子 —— 出图复现时有用，否则每次起卦都不同。
+// ---------------------------------------------------------------------------
+uint32_t app_port_random(void)
+{
+    static int seeded = 0;
+    if (!seeded) {
+        const char *e = getenv("SIM_SEED");
+        srand(e ? (unsigned)atoi(e) : (unsigned)time(NULL));
+        seeded = 1;
+    }
+    // 拼两次 rand() 加宽位宽
+    return ((uint32_t)rand() << 16) ^ (uint32_t)rand();
 }
 
 // ---------------------------------------------------------------------------

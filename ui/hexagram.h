@@ -27,18 +27,57 @@ typedef struct {
 // 查询一个 (上卦, 下卦) 组合对应的卦
 void getHexagram(uint8_t upperIdx, uint8_t lowerIdx, HexagramData *out);
 
-// 三位数 → 上卦/下卦/动爻
-//   百位 % 8 → 上卦（0 视作 7=坤）
-//   十位 % 8 → 下卦（同上）
-//   个位 % 6 → 动爻（0 视作 6，再转 0..5）
-void generateHexagramFromDigits(const uint8_t digits[3],
-                                uint8_t *outUpper, uint8_t *outLower,
-                                uint8_t *outMovingLine);
+// ---------------------------------------------------------------------------
+// 动爻用 6 位【掩码】表示
+//
+// 为什么不是单个下标：传统掷币法六爻都可能发动，也可能一个都不动
+//（"六爻安静"约每 5~6 次遇到一次），所以动爻是一组、不是一个。
+//   bit0 = 初爻 … bit5 = 上爻；0 表示六爻安静。
+// ---------------------------------------------------------------------------
+typedef uint8_t liuyao_moving_t;
+#define LIUYAO_MOV(i)  ((liuyao_moving_t)(1u << (i)))
 
-// 获取变卦（翻转动爻后重新解析上下卦）
+// 变卦：把动爻逐爻取反（阳变阴、阴变阳），不动的爻原样保留。
 void getChangedHexagram(uint8_t originalUpper, uint8_t originalLower,
-                        uint8_t movingLine,
+                        liuyao_moving_t moving,
                         uint8_t *outUpper, uint8_t *outLower);
+
+// 由六爻反查上下卦（lines[0]=初 … lines[5]=上，1=阳）。
+// 摇卦是逐爻掷出来的，攒满六爻后靠它还原出是哪一卦。
+void getHexagramFromLines(const uint8_t lines[6], uint8_t *outUpper, uint8_t *outLower);
+
+// 主爻：动爻里位置最高的那一个（变占法「以上爻为主」）。返回 -1 = 无动爻。
+int getPrimaryMovingLine(liuyao_moving_t moving);
+
+// ---------------------------------------------------------------------------
+// 变占规则（朱熹《易学启蒙》）：动爻个数决定该读哪段文字
+//
+//   0 动 → 本卦卦辞
+//   1 动 → 该动爻的爻辞
+//   2 动 → 两个动爻的爻辞，以上爻为主
+//   3 动 → 本卦与变卦的卦辞，以本卦为主
+//   4 动 → 变卦中两个"不动之爻"的爻辞
+//   5 动 → 变卦中那个"不动之爻"的爻辞
+//   6 动 → 乾坤看用九/用六，其余看变卦卦辞
+// ---------------------------------------------------------------------------
+typedef enum {
+    BIAN_ZHAN_JING = 0,      // 0 动
+    BIAN_ZHAN_ONE_YAO,       // 1 动
+    BIAN_ZHAN_TWO_YAO,       // 2 动
+    BIAN_ZHAN_THREE_GUA,     // 3 动
+    BIAN_ZHAN_FOUR,          // 4 动
+    BIAN_ZHAN_FIVE,          // 5 动
+    BIAN_ZHAN_SIX,           // 6 动
+} bian_zhan_t;
+
+bian_zhan_t getBianZhanRule(liuyao_moving_t moving);
+
+// 这一卦按变占法该看什么，一句白话（给"断卦"页那一行用，≤14 字）
+const char *getBianZhanText(uint8_t upper, uint8_t lower, liuyao_moving_t moving);
+
+// 六爻皆动时，乾坤两卦有专用辞（用九 / 用六）；其余卦返回空串
+const char *getYongJiuYongLiu(uint8_t upper, uint8_t lower);
+const char *getYongJiuYongLiuPlain(uint8_t upper, uint8_t lower);   // 它的白话
 
 // 动爻爻辞
 const char *getLineJudgment(uint8_t upper, uint8_t lower, uint8_t lineIdx);
@@ -84,7 +123,7 @@ const char *getLinePosMeaning(uint8_t lineIdx);
 //   比和 / 卦生变（顺势）/ 变生卦（得助）/ 卦克变（可制）/ 变克卦（受阻）
 // 说明：这是"卦级五行"的简化判断（真六爻看爻级纳甲五行），
 //       但逻辑自洽、结果随卦而变，不会反复撞同一句。
-const char *getElemRelationText(uint8_t upper, uint8_t lower, uint8_t movingLine);
+const char *getElemRelationText(uint8_t upper, uint8_t lower, liuyao_moving_t moving);
 
 // ---------------------------------------------------------------------------
 // 六爻【装卦】层（纳甲六爻的正统算法，纯规则推导）
@@ -127,7 +166,7 @@ typedef struct {
 } liuyao_chart_t;
 
 // 装卦：由 (上卦, 下卦, 动爻) 得到完整卦盘
-void getLiuyaoChart(uint8_t upper, uint8_t lower, uint8_t movingLine,
+void getLiuyaoChart(uint8_t upper, uint8_t lower, liuyao_moving_t moving,
                     liuyao_chart_t *out);
 
 // 取用神：按事由类别返回卦盘中作为用神的爻下标（0..5）。
@@ -143,7 +182,7 @@ int getYongShenLine(uint8_t catIdx, const liuyao_chart_t *chart);
 // ---------------------------------------------------------------------------
 const char *getLinePosPlain(uint8_t lineIdx);                       // 爻位白话
 const char *getElemRelationPlain(uint8_t upper, uint8_t lower,       // 五行走向白话
-                                 uint8_t movingLine);
+                                 liuyao_moving_t moving);
 
 // 世应关系的白话（世 = 你自己，应 = 对方）。
 // 取世、应两爻的五行论生克，描述【双方力量对比】；同样不下吉凶断语。

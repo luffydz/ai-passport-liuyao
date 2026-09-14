@@ -29,7 +29,6 @@ typedef enum {
     PAGE_WELCOME = 0,
     PAGE_CATEGORY,
     PAGE_DATE,      // 起卦日期（六爻要"哪天"，本机无 RTC，由用户输入）
-    PAGE_DIGITS,
     PAGE_CAST,      // 摇卦显爻
     PAGE_RESULT,    // 解卦（5 页）
 } page_t;
@@ -44,12 +43,18 @@ typedef enum {
 #define CHARGE_W      160
 #define CHARGE_H      8
 #define LINE_H        14
-#define LINE_STEP     26
+#define LINE_STEP     20      // 爻间距。原为 26，收紧是为了在底部腾出一行提醒；
+                              // 顶爻仍锚在 142（贴着上面的掷币结果），于是省下的
+                              // 空间全落在最下面那条爻之下（见 build_cast 底部）。
 #define LINE_X        70
 #define LINE_W        100
-#define LINE_Y0       272     // 第 1 爻（最下面那条）的 y
+#define LINE_Y0       242     // 第 1 爻（最下面那条）的 y：顶爻 = 242 - 5*20 = 142
 #define LINE_RX       126     // 阴爻右半条的 x
 #define LINE_RW       44
+
+// 摇卦页最底下两行（16px，字库行高 19）
+#define CAST_HINT_Y   260     // "按住 OK 蓄力 · 松手掷币"
+#define CAST_TIP_Y    285     // "蓄力大小会影响摇卦解卦"
 
 #define CHARGE_FULL_MS 1200   // 蓄力到头的时间（再按也不会更"满"）
 #define FLIP_MS         700   // 摇卦动画时长
@@ -80,12 +85,6 @@ static page_t    s_page;
 static int       s_cat;
 static lv_obj_t *s_cat_frames[CAT_COUNT];
 
-// 取数页
-static int       s_cursor;
-static int       s_digits[3];
-static lv_obj_t *s_digit_frames[3];
-static lv_obj_t *s_digit_labels[3];
-
 // 取日期页
 //   5 个"位"，但只画 3 个框：年 1 位（整值）、月 2 位、日 2 位。
 //   s_dpos: 0=年 1=月十位 2=月个位 3=日十位 4=日个位
@@ -94,12 +93,18 @@ static int       s_date[3];                       // 年 月 日
 static lv_obj_t *s_date_frames[3];                // 年 月 日 三个框
 static lv_obj_t *s_date_digit[5];                 // 5 个数字标签（月/日各拆成两位）
 static lv_obj_t *s_date_gz;                       // 干支预览（随日期实时更新）
+static lv_obj_t *s_date_mark;                     // 选中那一位下面的小金杠
 static ganzhi_t  s_gz;                            // 摇卦时锁定的当日干支
 static bool      s_gz_ok;                         // 干支是否算得出来（岁超出表范围）
 
 // 摇卦页
-static uint8_t   s_upper, s_lower, s_moving;
+//   s_lines / s_moving_mask 是摇卦的【产出】：每次蓄力松手掷三枚铜钱，数出几个
+//   背面就定下这一爻（单/拆/重/交），六次攒成一卦。s_upper/s_lower 要等第六次
+//   掷完才能由这六爻反查出来 —— 卦是摇出来的，不是提前算好的。
+static uint8_t   s_upper, s_lower;
+static liuyao_moving_t s_moving_mask; // 动爻掩码：bit0=初爻 … bit5=上爻
 static uint8_t   s_lines[6];          // 0=阴 1=阳
+static uint8_t   s_coin_back[3];      // 本次掷出的三枚：1=背面 0=字面
 static int       s_revealed;          // 已显化爻数 0..6
 static bool      s_charging;
 static bool      s_flipping;
@@ -107,23 +112,25 @@ static uint32_t  s_charge_ms;
 static uint32_t  s_flip_ms;
 static lv_timer_t *s_timer;
 static lv_obj_t *s_hint;
+static lv_obj_t *s_cast_txt;          // 摇卦页那行"三背 · 重 · 阳爻发动"
 static lv_obj_t *s_vol_label;         // 首页的"音效 xx%"
 static int       s_volume = 100;      // 铜钱音效响度 0..100，建首页时从 app_port 读入
 static lv_obj_t *s_charge_fill;
 static lv_obj_t *s_line_l[6];
 static lv_obj_t *s_line_r[6];
-static lv_obj_t *s_move_mark;
-struct coin { lv_obj_t *body; lv_obj_t *hole; int cx; };
+static lv_obj_t *s_move_mark[6];      // 每个动爻左边的小方块（现在可能有多个动爻）
+// 铜钱：body 是外圈、hole 是方孔、face_l/face_r 是"字面"的两个字。
+// 背面是光面（两个字藏起来）—— 数背面就靠这一眼。
+struct coin { lv_obj_t *body; lv_obj_t *hole; lv_obj_t *face_l; lv_obj_t *face_r; int cx; };
 static struct coin s_coins[3];
 
 // 解卦页
 static int       s_result_page;
 
-// 页面构建函数之间有互相调用（取日期页 ↔ 取数页），先统一声明
+// 页面构建函数之间有互相调用，先统一声明
 static void build_welcome(void);
 static void build_category(void);
 static void build_date(void);
-static void build_digits(void);
 static void build_cast(void);
 
 // ---------------------------------------------------------------------------
@@ -268,6 +275,8 @@ static void build_category(void)
 #define DATE_MON_W    62
 #define DATE_DAY_X   160
 #define DATE_DAY_W    62
+#define DATE_MARK_W   16      // 选中位小金杠的宽
+#define DATE_MARK_Y  151      // 小金杠的 y（框体 108..162，压在数字下方、仍在框内）
 
 // 该年该月有几天（含闰年判断）
 static int days_in_month(int y, int m)
@@ -360,6 +369,19 @@ static void date_refresh(void)
             lv_color_hex(i == s_dpos ? TH_GOLD : TH_TEXT), 0);
     }
 
+    // 选中那一位再加一条小金杠。
+    // 只靠文字颜色区分（金 / 米金）在 240 宽的小屏上太弱 —— 用户反馈"看不出
+    // 当前选的是哪一位"。位置全部由框常量算出，不写死坐标：月/日框里两个数字
+    // 标签分别偏 ±9（见 build_date 里的 align），所以选中位 = 框中心 ± 9。
+    if (s_date_mark) {
+        const int cx[3] = { DATE_YEAR_X + DATE_YEAR_W / 2,
+                            DATE_MON_X  + DATE_MON_W  / 2,
+                            DATE_DAY_X  + DATE_DAY_W  / 2 };
+        const int box = (s_dpos == 0) ? 0 : (s_dpos <= 2 ? 1 : 2);
+        const int off = (s_dpos == 0) ? 0 : ((s_dpos % 2) ? -9 : 9);
+        lv_obj_set_pos(s_date_mark, cx[box] + off - DATE_MARK_W / 2, DATE_MARK_Y);
+    }
+
     // 干支预览：让用户当场就能跟万年历比对，不用等起完卦
     ganzhi_t g;
     if (ganzhi_from_date(s_date[0], s_date[1], s_date[2], &g)) {
@@ -431,54 +453,36 @@ static void build_date(void)
         }
     }
 
+    // 选中指示杠：先建出来（位置由 date_refresh 每次刷新时算）
+    s_date_mark = solid(s_scr, 0, DATE_MARK_Y, DATE_MARK_W, 2, TH_GOLD);
+
     date_refresh();
     th_hint_create(s_scr, "上下调数 · OK 下一位\n长按 OK 回退");
     lv_screen_load(s_scr);
 }
 
-// ---------------------------------------------------------------------------
-// 取三位数页
-// ---------------------------------------------------------------------------
-static void digits_refresh(void)
-{
-    for (int i = 0; i < 3; i++) {
-        lv_label_set_text_fmt(s_digit_labels[i], "%d", s_digits[i]);
-        const bool active = (i == s_cursor);
-        lv_obj_set_style_border_color(s_digit_frames[i],
-            lv_color_hex(active ? TH_GOLD : TH_DIM), 0);
-        lv_obj_set_style_border_width(s_digit_frames[i], active ? 3 : 2, 0);
-        lv_obj_set_style_text_color(s_digit_labels[i],
-            lv_color_hex(active ? TH_GOLD : TH_TEXT), 0);
-    }
-}
-
-static void build_digits(void)
-{
-    s_page = PAGE_DIGITS;
-    s_cursor = 0;
-    s_digits[0] = s_digits[1] = s_digits[2] = 0;
-    s_scr = th_screen_create();
-
-    lv_obj_t *hdr = th_label(s_scr, "心中默念所求之事", th_font_small(), TH_DIM);
-    lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 34);
-
-    lv_obj_t *hdr2 = th_label(s_scr, "取  三  位  数", th_font_body(), TH_GOLD);
-    lv_obj_align(hdr2, LV_ALIGN_TOP_MID, 0, 64);
-
-    for (int i = 0; i < 3; i++) {
-        const int x = 20 + i * 72;
-        s_digit_frames[i] = th_frame_create(s_scr, x, 116, 56, 78);
-        s_digit_labels[i] = th_label(s_digit_frames[i], "0", th_font_title(), TH_TEXT);
-        lv_obj_align(s_digit_labels[i], LV_ALIGN_CENTER, 0, -th_vshift(th_font_title(), '8'));
-    }
-    digits_refresh();
-    th_hint_create(s_scr, "上下选数 · OK 下一位\n长按 OK 回退");
-    lv_screen_load(s_scr);
-}
+// 注：原「取三位数」页已删除。
+// 那三个数字本是"让用户有点参与感"，实际却偷偷决定了卦象；现在卦完全由
+// 摇卦产生，参与感交给蓄力时长，这一页就没有存在的必要了。
 
 // ---------------------------------------------------------------------------
 // 摇卦页
 // ---------------------------------------------------------------------------
+// 铜钱的两面 —— 摇卦时数"几个背面"就是靠这个分辨：
+//   背面 = 光面（只留金圈和方孔，字都藏起来）
+//   字面 = 孔左右各一个字（"通""宝"）
+static void coin_face_apply(int i, bool back)
+{
+    if (!s_coins[i].face_l) return;
+    if (back) {
+        lv_obj_add_flag(s_coins[i].face_l, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_coins[i].face_r, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_remove_flag(s_coins[i].face_l, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_coins[i].face_r, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void coin_apply(int i, float factor)
 {
     if (factor < 0.12f) factor = 0.12f;      // 侧立时留一点宽度，别完全消失
@@ -490,6 +494,15 @@ static void coin_apply(int i, float factor)
     const int hs = (int)(16 * factor);
     lv_obj_set_size(s_coins[i].hole, hs < 3 ? 3 : hs, hs < 3 ? 3 : hs);
     lv_obj_center(s_coins[i].hole);
+
+    // 转到快侧立时把字藏掉 —— 那个角度本来也看不见字面。
+    // 只在接近正对观众时才按背面/字面显示，落定后就是最终结果。
+    if (factor < 0.55f) {
+        lv_obj_add_flag(s_coins[i].face_l, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_coins[i].face_r, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        coin_face_apply(i, s_coin_back[i] != 0);
+    }
 }
 
 static void hint_set(const char *txt)
@@ -515,7 +528,8 @@ static void line_apply(int i)
     }
 
     // 动爻用亮金，其余用米金
-    const uint32_t col = (i == (int)s_moving) ? TH_GOLD : TH_TEXT;
+    const bool moving = (s_moving_mask & LIUYAO_MOV(i)) != 0;
+    const uint32_t col = moving ? TH_GOLD : TH_TEXT;
     lv_obj_set_style_bg_color(s_line_l[i], lv_color_hex(col), 0);
     lv_obj_set_style_border_width(s_line_l[i], 0, 0);
     lv_obj_set_style_bg_color(s_line_r[i], lv_color_hex(col), 0);
@@ -531,18 +545,18 @@ static void line_apply(int i)
         lv_obj_remove_flag(s_line_r[i], LV_OBJ_FLAG_HIDDEN);
     }
 
-    // 动爻标记（左侧小方块），显化到动爻之后才出现
-    if (i == (int)s_moving) {
-        lv_obj_set_pos(s_move_mark, 56, y + (LINE_H - 8) / 2);
-    }
+    // 动爻标记（左侧小方块）：这一爻显化出来且确实是动爻时才显示
+    if (moving) lv_obj_set_pos(s_move_mark[i], 56, y + (LINE_H - 8) / 2);
 }
 
 static void cast_refresh_all(void)
 {
-    for (int i = 0; i < 6; i++) line_apply(i);
-    const bool show_mark = (s_revealed > (int)s_moving);
-    if (show_mark) lv_obj_remove_flag(s_move_mark, LV_OBJ_FLAG_HIDDEN);
-    else           lv_obj_add_flag(s_move_mark, LV_OBJ_FLAG_HIDDEN);
+    for (int i = 0; i < 6; i++) {
+        line_apply(i);
+        const bool moving = (s_moving_mask & LIUYAO_MOV(i)) != 0;
+        if (moving && i < s_revealed) lv_obj_remove_flag(s_move_mark[i], LV_OBJ_FLAG_HIDDEN);
+        else                          lv_obj_add_flag(s_move_mark[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 
@@ -571,8 +585,13 @@ static void cast_timer_cb(lv_timer_t *t)
                 s_revealed++;
                 cast_refresh_all();
             }
-            if (s_revealed >= 6) hint_set("按 OK 解卦");
-            else                 hint_set("长按 OK 蓄力 · 松开摇卦");
+            if (s_revealed >= 6) {
+                // 六爻攒齐 —— 此刻才由这六爻反查出是哪一卦。卦没有别的来源。
+                getHexagramFromLines(s_lines, &s_upper, &s_lower);
+                hint_set("按 OK 解卦");
+            } else {
+                hint_set("按住 OK 蓄力 · 松手掷币");
+            }
         } else {
             const float t01 = (float)s_flip_ms / (float)FLIP_MS;
             for (int i = 0; i < 3; i++) {
@@ -584,6 +603,42 @@ static void cast_timer_cb(lv_timer_t *t)
     }
 }
 
+// 掷一次三枚铜钱，定下这一爻。
+//
+// 随机数 = 硬件随机 ^ 本次蓄力时长 —— 既守住传统（三枚铜钱掷一次），
+// 又让"手上使了多大劲"真的参与进来：同一个人按两次，蓄力时长不同，卦就不同。
+//
+// 数出几个背面：
+//   一背 = 单（阳爻）     两背 = 拆（阴爻）
+//   三背 = 重（阳·发动）  无背 = 交（阴·发动）
+static void cast_do_toss(void)
+{
+    uint32_t r = app_port_random() ^ (s_charge_ms * 2654435761u);
+    int backs = 0;
+    for (int i = 0; i < 3; i++) {
+        r = r * 1103515245u + 12345u;                 // 逐枚演进
+        s_coin_back[i] = (uint8_t)((r >> 16) & 1u);   // 1 = 背面
+        if (s_coin_back[i]) backs++;
+    }
+
+    const int  idx    = s_revealed;
+    const bool yang   = (backs == 1 || backs == 3);
+    const bool moving = (backs == 0 || backs == 3);   // 交/重 = 老阴/老阳 = 动爻
+    s_lines[idx] = yang ? 1 : 0;
+    if (moving) s_moving_mask |= LIUYAO_MOV(idx);
+
+    // 结果文字：不必记规则也看得懂这一掷
+    static const char *BEI[4]  = { "无背", "一背", "两背", "三背" };
+    static const char *NAME[4] = { "交",   "单",   "拆",   "重"   };
+    static const char *NOTE[4] = { "阴爻发动", "阳爻", "阴爻", "阳爻发动" };
+    if (s_cast_txt) {
+        static char buf[40];
+        lv_snprintf(buf, sizeof(buf), "%s · %s · %s",
+                    BEI[backs], NAME[backs], NOTE[backs]);
+        lv_label_set_text(s_cast_txt, buf);
+    }
+}
+
 static void cast_start_charge(void)
 {
     // 摇卦动画还在播时忽略新的按下，否则动画永远走不完
@@ -591,7 +646,7 @@ static void cast_start_charge(void)
     s_charging = true;
     s_charge_ms = 0;
     lv_obj_set_width(s_charge_fill, 0);
-    hint_set("松手摇卦");
+    hint_set("松手掷币");
 }
 
 static void cast_release(void)
@@ -602,6 +657,7 @@ static void cast_release(void)
     s_flip_ms = 0;
     lv_obj_set_width(s_charge_fill, 0);   // 蓄力条清空
     hint_set("摇卦中…");
+    cast_do_toss();                       // 松手即定这一爻（蓄力时长参与其中）
     liuyao_sound_coin();                  // 铜钱声（非阻塞）
 }
 
@@ -613,21 +669,16 @@ static void build_cast(void)
     s_flipping = false;
     s_charge_ms = 0;
     s_flip_ms = 0;
-
-    // 三位数 → 上下卦与动爻（数据来自 hexagram.c）
-    const uint8_t d[3] = { (uint8_t)s_digits[0], (uint8_t)s_digits[1], (uint8_t)s_digits[2] };
-    generateHexagramFromDigits(d, &s_upper, &s_lower, &s_moving);
-    for (int i = 0; i < 3; i++) {
-        s_lines[i]     = TRIGRAM_LINES[s_lower][i];   // 下卦：初、二、三
-        s_lines[i + 3] = TRIGRAM_LINES[s_upper][i];   // 上卦：四、五、上
-    }
+    s_moving_mask = 0;
+    for (int i = 0; i < 6; i++) s_lines[i] = 0;
+    for (int i = 0; i < 3; i++) s_coin_back[i] = 0;   // 开局三枚都朝字面
 
     s_scr = th_screen_create();
 
     lv_obj_t *hdr = th_label(s_scr, getCategoryName((uint8_t)s_cat), th_font_small(), TH_DIM);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 10);
 
-    // 三枚铜钱
+    // 三枚铜钱：外圈 + 方孔 + "字面"的两个字
     for (int i = 0; i < 3; i++) {
         s_coins[i].cx = COIN_CX0 + i * COIN_CXSTEP;
         s_coins[i].body = lv_obj_create(s_scr);
@@ -646,6 +697,14 @@ static void build_cast(void)
         lv_obj_set_style_border_width(s_coins[i].hole, 1, 0);
         lv_obj_set_style_radius(s_coins[i].hole, 0, 0);
         lv_obj_set_style_pad_all(s_coins[i].hole, 0, 0);
+
+        // 字面：方孔左右各一个字。背面时这两个字藏起来，
+        // 于是"光面 = 背"一眼可辨 —— 数背面不用记规则。
+        s_coins[i].face_l = th_label(s_coins[i].body, "通", th_font_tiny(), TH_GOLD);
+        lv_obj_align(s_coins[i].face_l, LV_ALIGN_LEFT_MID, 1, 0);
+        s_coins[i].face_r = th_label(s_coins[i].body, "宝", th_font_tiny(), TH_GOLD);
+        lv_obj_align(s_coins[i].face_r, LV_ALIGN_RIGHT_MID, -1, 0);
+
         coin_apply(i, 1.0f);
     }
 
@@ -653,19 +712,42 @@ static void build_cast(void)
     solid(s_scr, CHARGE_X, CHARGE_Y, CHARGE_W, CHARGE_H, 0x1A1408);
     s_charge_fill = solid(s_scr, CHARGE_X, CHARGE_Y, 0, CHARGE_H, TH_GOLD);
 
+    // 本次掷币的结果（如"三背 · 重 · 阳爻发动"）
+    s_cast_txt = th_label(s_scr, "", th_font_tiny(), TH_TEXT);
+    lv_obj_set_width(s_cast_txt, 220);
+    lv_obj_set_style_text_align(s_cast_txt, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_cast_txt, LV_ALIGN_TOP_MID, 0, 122);
+
     // 六条爻（从下往上）
     for (int i = 0; i < 6; i++) {
         s_line_l[i] = solid(s_scr, LINE_X, LINE_Y0 - i * LINE_STEP, LINE_W, LINE_H, 0x1A1408);
         s_line_r[i] = solid(s_scr, LINE_RX, LINE_Y0 - i * LINE_STEP, LINE_RW, LINE_H, TH_TEXT);
         lv_obj_add_flag(s_line_r[i], LV_OBJ_FLAG_HIDDEN);
     }
-    s_move_mark = solid(s_scr, 56, 0, 8, 8, TH_GOLD);
-    lv_obj_add_flag(s_move_mark, LV_OBJ_FLAG_HIDDEN);
+    // 每个动爻左边一个小方块 —— 现在可能有多个动爻
+    for (int i = 0; i < 6; i++) {
+        s_move_mark[i] = solid(s_scr, 56, 0, 8, 8, TH_GOLD);
+        lv_obj_add_flag(s_move_mark[i], LV_OBJ_FLAG_HIDDEN);
+    }
 
     cast_refresh_all();
 
-    // 底部提示：th_hint_create 建的是原生 label，这里要单独拿到句柄才能改文字
-    s_hint = th_hint_create(s_scr, "长按 OK 蓄力 · 松开摇卦");
+    // 底部两行。原来只有一行提示、贴屏幕最下沿；现在最下面还要写一句
+    // "蓄力会影响卦象"，所以提示条改为按固定 y 排，六爻也顺势收紧（见 LINE_STEP）
+    // —— 腾出来的正是这两行的位置。
+    //
+    // 提示条本身是底部对齐的（th_hint_create 是给"只有一行提示"的页面用的），
+    // 这里建完再改对齐，不动那个函数的语义。
+    s_hint = th_hint_create(s_scr, "按住 OK 蓄力 · 松手掷币");
+    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, CAST_HINT_Y);
+
+    // 提醒：蓄力的轻重会 XOR 进随机数（见 cast_do_toss），它真的会改变卦与解卦，
+    // 不是"手感"而已。所以用米金而非提示条的暗色 —— 这条信息要看得清。
+    lv_obj_t *tip = th_label(s_scr, "蓄力大小会影响摇卦解卦",
+                             th_font_small(), TH_TEXT);
+    lv_obj_set_width(tip, APP_SCREEN_W - 2 * TH_FRAME_INSET - 8);
+    lv_obj_set_style_text_align(tip, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(tip, LV_ALIGN_TOP_MID, 0, CAST_TIP_Y);
 
     s_timer = lv_timer_create(cast_timer_cb, 33, NULL);
     lv_screen_load(s_scr);
@@ -735,11 +817,11 @@ static void result_build_chart(lv_obj_t *parent, const liuyao_chart_t *ch, int y
 }
 
 // 把 6 条爻画成小尺寸卦象（解卦页用）
-static void result_build_mini(lv_obj_t *parent, const uint8_t lines[6], uint8_t moving)
+static void result_build_mini(lv_obj_t *parent, const uint8_t lines[6], liuyao_moving_t moving)
 {
     for (int i = 0; i < 6; i++) {
         const int y = RESULT_MINI_Y0 - i * RESULT_MINI_STEP;
-        const uint32_t col = (i == (int)moving) ? TH_GOLD : TH_TEXT;
+        const uint32_t col = (moving & LIUYAO_MOV(i)) ? TH_GOLD : TH_TEXT;
         if (lines[i]) {
             solid(parent, RESULT_MINI_X, y, RESULT_MINI_W, RESULT_MINI_H, col);
         } else {
@@ -757,11 +839,12 @@ static void result_show(void)
     HexagramData ben;
     getHexagram(s_upper, s_lower, &ben);
     uint8_t cu = s_upper, cl = s_lower;
-    getChangedHexagram(s_upper, s_lower, s_moving, &cu, &cl);
+    getChangedHexagram(s_upper, s_lower, s_moving_mask, &cu, &cl);
     HexagramData bian;
     getHexagram(cu, cl, &bian);
 
-    const bool is_yang = s_lines[s_moving] != 0;
+    // 主爻 = 最高的动爻（变占法多处"以上爻为主"）。六爻安静时为 -1。
+    const int mv_main = getPrimaryMovingLine(s_moving_mask);
 
     // 清掉旧内容（保留外框与提示条由重建统一处理）
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
@@ -769,7 +852,7 @@ static void result_show(void)
     // 第 5 页"断卦"讲卦说了什么（爻辞 + 本卦/变卦），第 6 页"断语"给四段结论。
     // 拆成两页是因为挤在一页要压到 22px 行距，读起来太密。
     static const char *TITLES[RESULT_PAGES] = { "本 卦", "卦 盘", "卦 辞", "变 卦",
-                                                "断 卦", "断 语" };
+                                                "爻 辞", "断 卦" };
     s_scr = th_screen_create();
     lv_obj_t *hdr = th_label(s_scr, TITLES[s_result_page], th_font_small(), TH_DIM);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 12);
@@ -781,14 +864,14 @@ static void result_show(void)
         lv_snprintf(tri, sizeof(tri), "上 %s   下 %s",
                     getTrigramName(s_upper), getTrigramName(s_lower));
         center_label(s_scr, tri, th_font_small(), TH_TEXT, 90);
-        result_build_mini(s_scr, s_lines, s_moving);
+        result_build_mini(s_scr, s_lines, s_moving_mask);
         lv_obj_t *note = th_label(s_scr, "亮金为动爻", th_font_tiny(), TH_DIM);
         lv_obj_align(note, LV_ALIGN_TOP_MID, 0, 244);
         break;
     }
     case 1: {   // 卦盘：正统装卦（卦宫 / 世应 / 纳甲 / 六亲 / 用神 / 六神 / 旺衰）
         liuyao_chart_t ch;
-        getLiuyaoChart(s_upper, s_lower, s_moving, &ch);
+        getLiuyaoChart(s_upper, s_lower, s_moving_mask, &ch);
         const int ys = getYongShenLine((uint8_t)s_cat, &ch);
 
         // 第一行：起卦当天的年月日柱 + 旬空
@@ -861,74 +944,91 @@ static void result_show(void)
         }
         break;
     }
-    case 4: {   // 断卦：动爻 + 爻辞 + 本卦/变卦（各带自己的白话）
-        // 这一页只讲"卦说了什么"。原先它还得挤下四段断语（共 11 行、行距压到
-        // 22px），现在断语移到下一页，这里放松到 26px，读起来不费劲。
-        static char pos[24];
-        lv_snprintf(pos, sizeof(pos), "%s 动", getLineName(s_moving, is_yang));
-        center_label(s_scr, pos, th_font_body(), TH_GOLD, 48);
+    case 4: {   // 爻辞：按变占法决定读几条 —— 0 条、1 条或 2 条
+        // 一爻动读该爻；两爻动两爻都读（以上爻为主，所以从上往下排）；
+        // 三爻以上传统就不看爻辞了，转看卦辞。
+        int y = 58;
+        int shown = 0;
+        for (int i = 5; i >= 0 && shown < 2; i--) {
+            if (!(s_moving_mask & LIUYAO_MOV(i))) continue;
+            shown++;
 
-        lv_obj_t *lab = th_label(s_scr, getLineJudgment(s_upper, s_lower, s_moving),
-                                 th_font_body(), TH_TEXT);
-        lv_obj_set_width(lab, 224);
-        lv_obj_set_style_text_align(lab, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 74);
+            static char pos[24];
+            lv_snprintf(pos, sizeof(pos), "%s 动",
+                        getLineName((uint8_t)i, s_lines[i] != 0));
+            center_label(s_scr, pos, th_font_body(), TH_GOLD, y);
+            y += 28;
 
-        // 爻辞白话：古文原文下面紧跟一句人话。
-        // 原文用 TH_TEXT（米金，偏暗），白话用 TH_GOLD（亮金）——
-        // 视线上一暗一亮的对照，能一眼看出哪行是解释哪行的。
-        // 宽度 224px ÷ 18px = 12 字，所以每条白话都 ≤12 字（超了会折行顶掉下面）。
-        lv_obj_t *plain = th_label(s_scr, getLineJudgmentPlain(s_upper, s_lower, s_moving),
-                                   th_font_body(), TH_GOLD);
-        lv_obj_set_width(plain, 224);
-        lv_obj_set_style_text_align(plain, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(plain, LV_ALIGN_TOP_MID, 0, 100);
+            lv_obj_t *lab = th_label(s_scr, getLineJudgment(s_upper, s_lower, (uint8_t)i),
+                                     th_font_body(), TH_TEXT);
+            lv_obj_set_width(lab, 224);
+            lv_obj_set_style_text_align(lab, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, y);
+            y += 28;
 
-        // —— 本卦（现状）+ 它的白话 ——
-        // 爻位说"事情走到哪一步了"，是现状；五行走向说"接下来顺不顺"，是趋势。
-        static char v_ben[64], v_bian[64], p_ben[32], p_bian[32];
-        lv_snprintf(v_ben, sizeof(v_ben), "本卦 %s", getHexagramInterp(s_upper, s_lower));
-        lv_snprintf(p_ben, sizeof(p_ben), "%s，", getLinePosPlain(s_moving));
+            // 爻辞白话：原文（米金，偏暗）下面紧跟一句人话（亮金）。
+            // 宽度 224px ÷ 18px = 12 字，所以每条白话都 ≤12 字。
+            lv_obj_t *pl = th_label(s_scr, getLineJudgmentPlain(s_upper, s_lower, (uint8_t)i),
+                                    th_font_body(), TH_GOLD);
+            lv_obj_set_width(pl, 224);
+            lv_obj_set_style_text_align(pl, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_align(pl, LV_ALIGN_TOP_MID, 0, y);
+            y += 40;                      // 两组之间留一点空
+        }
 
-        // —— 变卦（趋势）+ 它的白话 ——
-        // 动爻必然使上下卦之一变化，所以正常情况下变卦一定与本卦不同；
-        // 仍留一个防御分支，避免万一相同时显示两行一样的白话。
-        lv_snprintf(v_bian, sizeof(v_bian), "变卦 %s",
-                    (cu == s_upper && cl == s_lower) ? "六爻安静"
-                                                      : getHexagramInterp(cu, cl));
-        lv_snprintf(p_bian, sizeof(p_bian), "%s，",
-                    getElemRelationPlain(s_upper, s_lower, s_moving));
+        const bian_zhan_t rule = getBianZhanRule(s_moving_mask);
+        if (shown == 0) {
+            // 本页没有爻辞可列 —— 用【本页自己的话】讲清"为什么空"。
+            //
+            // 刻意不搬"断卦"页那句读法规则（如"六爻安静，看本卦卦辞"）：两页紧挨着，
+            // 同一句话读起来就是重复。读法的权威说明统一放末页"断卦"，因为那一页
+            // 在 0~6 动【任何】情况下都会显示，是唯一的归纳位；本页只管自己。
+            center_label(s_scr, "六爻安静，没有动爻",
+                         th_font_body(), TH_GOLD, 96);
+        } else if (rule != BIAN_ZHAN_ONE_YAO && rule != BIAN_ZHAN_TWO_YAO) {
+            // 三爻以上：上面那个循环最多只列两条（shown < 2），所以这里必须说明
+            // "没列全"，否则用户会以为动爻只有两个。该读什么由末页"断卦"统一讲。
+            //
+            // 注意这必须写成 else if —— 三爻以上时 shown 恒为 2，永远进不了上面
+            // 那个 shown == 0 分支，写成那里就是死代码（漏过一版，已修）。
+            center_label(s_scr, "动爻较多，此处只列两爻",
+                         th_font_body(), TH_DIM, y + 6);
+        }
 
-        // ⚠ 这些行必须用 18px（th_font_body）：白话里的字只收进了 18px 字库，
-        //   16px 小字库没有它们 —— 真机会显示方块（模拟器用 FreeType 看不出来）。
-        //   用 tools/check_font_coverage.py 可以查这类问题。
-        const struct { const char *txt; uint32_t col; } pairs[4] = {
-            { v_ben,  TH_TEXT },   // 本卦
-            { p_ben,  TH_GOLD },   // 　└ 本卦的白话
-            { v_bian, TH_TEXT },   // 变卦
-            { p_bian, TH_GOLD },   // 　└ 变卦的白话
-        };
-        for (int i = 0; i < 4; i++) {
-            lv_obj_t *t = th_label(s_scr, pairs[i].txt, th_font_body(), pairs[i].col);
-            lv_obj_set_width(t, 224);
-            lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-            // 132 起、26px：本卦/变卦两组之间自然留出一行空白，看得出配对关系
-            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 132 + i * 26);
+        // 六爻皆动时，乾、坤有专用辞（用九 / 用六）
+        if (rule == BIAN_ZHAN_SIX && getYongJiuYongLiu(s_upper, s_lower)[0] != 0) {
+            center_label(s_scr, getYongJiuYongLiu(s_upper, s_lower),
+                         th_font_body(), TH_TEXT, y + 30);
+            center_label(s_scr, getYongJiuYongLiuPlain(s_upper, s_lower),
+                         th_font_body(), TH_GOLD, y + 58);
         }
         break;
     }
-    default: {  // 断语：力量 / 虚实 / 双方 / 建议（"答案"在这一页）
+    default: {  // 断卦：变占说明 + 现状/趋势 + 力量/虚实/双方/建议（"答案"在这一页）
+        // 开头一行把"这一卦该看哪儿"讲明白 —— 是传统规则，也省得用户猜。
+        //
+        // 用【米金 TH_TEXT】：这一行是"读法指示"，得一眼读到 —— 原来的 TH_DIM
+        // (橄榄棕) 明度只有米金一半、几乎无彩，在纯黑底上像脏灰。米金又与下面
+        // 暖金色的结论（TH_GOLD）分得开：一眼能分出"这行是说明、下面是结论"。
+        center_label(s_scr, getBianZhanText(s_upper, s_lower, s_moving_mask),
+                     th_font_body(), TH_TEXT, 40);
+
+        // 现状 / 趋势：由【主爻】决定；六爻安静时没有"走向"可说，留空
+        static char v1[64], v2[80], v3[64], v4[64], v5[64];
+        v1[0] = 0;
+        if (mv_main >= 0) {
+            lv_snprintf(v1, sizeof(v1), "%s，%s，",
+                        getLinePosPlain((uint8_t)mv_main),
+                        getElemRelationPlain(s_upper, s_lower, s_moving_mask));
+        }
+
         // ★ 每行都随卦/随日/随事由变，而且都要说人话。
-        //   术语版（"用神官鬼土休、日辰克害"）只有懂六爻的人才看得懂，所以这里
-        //   统一用白话。专业术语不丢：卦盘页仍完整显示纳甲、六亲、世应、六神、旺衰。
         //   力量：旺衰(5) × 日辰作用(5)，按【月建/日辰】算   = 25 种
         //   虚实：用神是否落旬空                            = 2 种
         //   双方：世（自己）与应（对方）的五行生克           = 5 种
         //   建议：事由(8) × 用神旺衰档(5)                   = 40 种
-        static char v2[80], v3[64], v4[64], v5[64];
-
         liuyao_chart_t ch;
-        getLiuyaoChart(s_upper, s_lower, s_moving, &ch);
+        getLiuyaoChart(s_upper, s_lower, s_moving_mask, &ch);
         const int ys = getYongShenLine((uint8_t)s_cat, &ch);
         int str_level = -1;                  // 用神旺衰档位：0旺 1相 2休 3囚 4死
         v2[0] = 0;
@@ -943,10 +1043,8 @@ static void result_show(void)
             }
         }
 
-        // 虚实：用神是否落在【旬空】里。
-        // 六爻规矩「动不为空」—— 用神自己发动时不当空论，所以先排除动爻。
-        // 白话只说"悬着 / 有着落"，不写成凶或吉：空只说明这事眼下没落到实处。
-        // 用神不上卦（ys<0）或没设日期时不显示这一行。
+        // 虚实：用神是否落在【旬空】里。六爻规矩「动不为空」—— 用神自己发动时
+        // 不当空论，所以先排除动爻。白话只说"悬着 / 有着落"，不写成凶或吉。
         v3[0] = 0;
         if (s_gz_ok && ys >= 0) {
             const bool kong = !ch.lines[ys].is_moving && line_is_kong(&ch.lines[ys]);
@@ -957,19 +1055,18 @@ static void result_show(void)
         // 双方：世（你自己）与应（对方）的五行生克
         lv_snprintf(v4, sizeof(v4), "%s", getShiYingPlain(&ch));
 
-        // 建议：按【用神旺衰】取句 —— 旺则放手、死则停手。与上面"力量"那行同源，
-        // 不会再出现"势头偏弱"却配"宜积极进取"这种自相矛盾。
+        // 建议：按【用神旺衰】取句 —— 旺则放手、死则停手，与"力量"那行同源
         lv_snprintf(v5, sizeof(v5), "%s",
                     getCategoryAdvice((uint8_t)s_cat, str_level));
 
-        const char *lines[4] = { v2, v3, v4, v5 };
-        for (int i = 0; i < 4; i++) {
+        const char *lines[5] = { v1, v2, v3, v4, v5 };
+        for (int i = 0; i < 5; i++) {
             if (!lines[i][0]) continue;
             lv_obj_t *t = th_label(s_scr, lines[i], th_font_body(), TH_GOLD);
             lv_obj_set_width(t, 220);
             lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-            // 这一页只有四行，可以放松：96 起、26px
-            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 96 + i * 26);
+            // 五行、行距 30px：从 74 排到 194，这一页位置宽裕
+            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 74 + i * 30);
         }
         break;
     }
@@ -1003,7 +1100,8 @@ void liuyao_exit(void)
     }
     s_hint = NULL;
     s_charge_fill = NULL;
-    s_move_mark = NULL;
+    s_cast_txt = NULL;
+    for (int i = 0; i < 6; i++) s_move_mark[i] = NULL;
     s_date_gz = NULL;
     for (int i = 0; i < 6; i++) { s_line_l[i] = s_line_r[i] = NULL; }
     for (int i = 0; i < 5; i++) { s_date_digit[i] = NULL; }
@@ -1063,7 +1161,7 @@ void liuyao_key(app_key_t key, app_key_ev_t ev)
                     app_port_date_save(s_date[0], s_date[1], s_date[2]);   // 记住，下次默认
                     s_gz_ok = ganzhi_from_date(s_date[0], s_date[1], s_date[2], &s_gz);
                     liuyao_exit();
-                    build_digits();
+                    build_cast();               // 日期定了就直接摇卦（不再填数字）
                 }
             } else {
                 // 上下调数：取值范围随上位联动（见 date_digit_range）
@@ -1083,35 +1181,6 @@ void liuyao_key(app_key_t key, app_key_ev_t ev)
             } else {
                 liuyao_exit();
                 build_category();                  // 退回上一页：择事
-            }
-        }
-        break;
-
-    // ---------------- 取数页 ----------------
-    case PAGE_DIGITS:
-        if (ev == APP_KEY_CLICK) {
-            if (key == APP_KEY_UP) {
-                s_digits[s_cursor] = (s_digits[s_cursor] + 1) % 10;
-                digits_refresh();
-            } else if (key == APP_KEY_DOWN) {
-                s_digits[s_cursor] = (s_digits[s_cursor] + 9) % 10;
-                digits_refresh();
-            } else if (key == APP_KEY_OK) {
-                if (s_cursor < 2) {
-                    s_cursor++;
-                    digits_refresh();
-                } else {
-                    liuyao_exit();       // 会顺带停掉定时器
-                    build_cast();
-                }
-            }
-        } else if (key == APP_KEY_OK && ev == APP_KEY_LONG) {
-            if (s_cursor > 0) {
-                s_cursor--;
-                digits_refresh();
-            } else {
-                liuyao_exit();
-                build_date();      // 退回上一页：日期
             }
         }
         break;
