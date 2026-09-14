@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 34 px
  * Bpp: 4
- * Opts: --font /Users/luffydz/Desktop/ai passport/assets/fonts/ZiHunTaiAKaiShu.ttf --size 34 --bpp 4 --format lvgl --no-compress --lv-font-name lv_font_kai_34 --lv-include lvgl.h --force-fast-kern-format --symbols  ",0123456789{}丁三上下丑丙业中丰临为乙九乾事二五井亥人他健兄克兑入六其内出初制前剥动助势升午卦卯受变可同否和咸嗑噬四困在地坎坤壬壮复外大天夬夷妄妹妻姤姻子孙孚学宅安官宫家寅尊小局居履屯山己已巳巽师平庚康弟归得念恒情感戊戌所损旅无既明晋有未末极母比水求泰泽济涣渐火父生甲申畜癸益睽离移程缘考至艮节萃萌蒙蛊行观解讼试谦象豫财贲蹇辛辰迁过运近遁酉阻随雷需震革顺颐风鬼鼎 -o /Users/luffydz/Desktop/ai passport/ui/fonts/lv_font_kai_34.c
+ * Opts: --font /Users/luffydz/Desktop/ai passport/liuyao/assets/fonts/ZiHunTaiAKaiShu.ttf --size 34 --bpp 4 --format lvgl --no-compress --lv-font-name lv_font_kai_34 --lv-include lvgl.h --force-fast-kern-format --symbols  ",0123456789{}丁三上下丑丙业中丰临为乙九乾事二五井亥人他健兄克兑入六其内出初制前剥动助势升午卦卯受变可同否和咸嗑噬四困在地坎坤壬壮复外大天夬夷妄妹妻姤姻子孙孚学宅安官宫家寅尊小局居履屯山己已巳巽师平庚康弟归得念恒情感戊戌所损旅无既明晋有未末极母比水求泰泽济涣渐火父生甲申畜癸益睽离移程缘考至艮节萃萌蒙蛊行观解讼试谦象豫财贲蹇辛辰迁过运近遁酉阻随雷需震革顺颐风鬼鼎 -o /Users/luffydz/Desktop/ai passport/liuyao/ui/fonts/lv_font_kai_34.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

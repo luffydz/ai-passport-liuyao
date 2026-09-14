@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 48 px
  * Bpp: 4
- * Opts: --font /Users/luffydz/Desktop/ai passport/assets/fonts/ZiHunTaiAKaiShu.ttf --size 48 --bpp 4 --format lvgl --no-compress --lv-font-name lv_font_kai_48 --lv-include lvgl.h --force-fast-kern-format --symbols  六爻 -o /Users/luffydz/Desktop/ai passport/ui/fonts/lv_font_kai_48.c
+ * Opts: --font /Users/luffydz/Desktop/ai passport/liuyao/assets/fonts/ZiHunTaiAKaiShu.ttf --size 48 --bpp 4 --format lvgl --no-compress --lv-font-name lv_font_kai_48 --lv-include lvgl.h --force-fast-kern-format --symbols  六爻 -o /Users/luffydz/Desktop/ai passport/liuyao/ui/fonts/lv_font_kai_48.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

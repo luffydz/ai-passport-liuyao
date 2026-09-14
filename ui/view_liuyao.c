@@ -18,6 +18,7 @@
 
 #include <math.h>
 #include <stdio.h>       // sscanf：解析 __DATE__ 作首次开机的日期兜底
+#include <string.h>      // strstr：判断某爻的纳甲地支是否落在旬空里
 
 #define CAT_COUNT 8
 static const char *CAT_NAMES[CAT_COUNT] = {
@@ -673,6 +674,20 @@ static void build_cast(void)
 // ---------------------------------------------------------------------------
 // 解卦页（5 页）
 // ---------------------------------------------------------------------------
+// 这一爻是否落在本旬的【旬空】里。
+//
+// 纳甲字符串形如 "己丑"：第一个汉字是天干、第二个是地支（UTF-8 各占 3 字节），
+// 所以拿干支表里的地支去子串匹配即可。
+// 旬空需要起卦日期才能算，没设日期时一律返回 false。
+static bool line_is_kong(const liuyao_line_t *ln)
+{
+    if (!ln || !s_gz_ok) return false;
+    for (int i = 0; i < 2; i++) {
+        if (strstr(ln->ganzhi, GZ_ZHI[s_gz.kong_zhi[i]])) return true;
+    }
+    return false;
+}
+
 // 卦盘页：正统装卦的六行表。
 //   每行 = 用神标记 / 六亲 / 纳甲干支+五行 / 爻象 / 世应
 //   上爻排最上面，初爻排最下面（传统卦盘画法）。
@@ -864,7 +879,7 @@ static void result_show(void)
         lv_obj_set_style_text_align(plain, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(plain, LV_ALIGN_TOP_MID, 0, 98);
 
-        // 原来这里有一行事由标签，已去掉：断语第三行本来就写着事由
+        // 原来这里有一行事由标签，已去掉：断语最后一行本来就写着事由
         // （"事业宜积极进取…"），重复显示。省下的这一行给了上面的白话。
 
         static char v_ben[64], v_bian[64];
@@ -888,14 +903,16 @@ static void result_show(void)
         lv_obj_set_style_text_align(l2, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(l2, LV_ALIGN_TOP_MID, 0, 152);
 
-        // ★ 断语三行 —— 这是"答案"，三行都必须随卦/随日变，而且都要说人话。
+        // ★ 断语五行 —— 这是"答案"，每行都随卦/随日/随事由变，而且都要说人话。
         //   术语版（"用神官鬼土休、日辰克害"）只有懂六爻的人才看得懂，所以这里
         //   统一用白话（getLinePosPlain / getElemRelationPlain / *_plain）。
         //   专业术语不丢：卦盘页仍然完整显示纳甲、六亲、世应、六神、旺衰。
-        //   第 1 行 卦象：爻位(6) × 五行走向(5)                      = 30 种
-        //   第 2 行 条件：旺衰(5) × 日辰作用(5)，按【月建/日辰】算    = 25 种
-        //   第 3 行 倾向：事由类别 × 动爻阴阳                          = 每类别 2 条
-        static char v1[64], v2[80], v3[64];
+        //   第 1 行 趋势：爻位(6) × 五行走向(5)                      = 30 种
+        //   第 2 行 力量：旺衰(5) × 日辰作用(5)，按【月建/日辰】算    = 25 种
+        //   第 3 行 虚实：用神是否落旬空                              = 2 种
+        //   第 4 行 双方：世（自己）与应（对方）的五行生克            = 5 种
+        //   第 5 行 倾向：事由类别 × 动爻阴阳                          = 每类别 2 条
+        static char v1[64], v2[80], v3[64], v4[64], v5[64];
         lv_snprintf(v1, sizeof(v1), "%s，%s，",
                     getLinePosPlain(s_moving),
                     getElemRelationPlain(s_upper, s_lower, s_moving));
@@ -913,16 +930,32 @@ static void result_show(void)
                             ganzhi_day_effect_plain(wx, &s_gz));
             }
         }
-        lv_snprintf(v3, sizeof(v3), "%s",
+
+        // 虚实：用神是否落在【旬空】里。
+        // 六爻规矩「动不为空」—— 用神自己发动时不当空论，所以先排除动爻。
+        // 白话只说"悬着 / 有着落"，不写成凶或吉：空只说明这事眼下没落到实处。
+        // 用神不上卦（ys<0）或没设日期时不显示这一行。
+        v3[0] = 0;
+        if (s_gz_ok && ys >= 0) {
+            const bool kong = !ch.lines[ys].is_moving && line_is_kong(&ch.lines[ys]);
+            lv_snprintf(v3, sizeof(v3), "%s",
+                        kong ? "此事悬空，暂难落实，" : "此事有着落，");
+        }
+
+        // 双方：世（你自己）与应（对方）的五行生克
+        lv_snprintf(v4, sizeof(v4), "%s", getShiYingPlain(&ch));
+
+        lv_snprintf(v5, sizeof(v5), "%s",
                     getCategorySuggestion((uint8_t)s_cat, is_yang));
 
-        const char *lines[3] = { v1, v2, v3 };
-        for (int i = 0; i < 3; i++) {
+        const char *lines[5] = { v1, v2, v3, v4, v5 };
+        for (int i = 0; i < 5; i++) {
             if (!lines[i][0]) continue;
             lv_obj_t *t = th_label(s_scr, lines[i], th_font_body(), TH_GOLD);
             lv_obj_set_width(t, 220);
             lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 186 + i * 26);
+            // 22px 行距：五行要塞进 172..280 这一段，再宽就顶到底部提示条了
+            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 172 + i * 22);
         }
         break;
     }

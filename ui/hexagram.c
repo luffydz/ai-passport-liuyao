@@ -570,6 +570,30 @@ const char* getElemRelationPlain(uint8_t upper, uint8_t lower, uint8_t movingLin
   return ELEM_RELATION_PLAIN[five_elem_relation(before, after)];
 }
 
+// ===== 世应关系白话 =====
+// 世爻是求测人自己，应爻是对方。拿两爻的五行论生克，就是双方的力量对比。
+// 用 five_elem_relation 的下标：0比和 1我生它 2它生我 3我克它 4它克我
+//（此处的"我"是【世】）。措辞只描述态势，不写成吉凶。
+const char* getShiYingPlain(const liuyao_chart_t* chart) {
+  if (!chart) return "";
+  int shi = -1, ying = -1;
+  for (int i = 0; i < 6; i++) {
+    if (chart->lines[i].shiying == 1) shi = i;
+    else if (chart->lines[i].shiying == 2) ying = i;
+  }
+  if (shi < 0 || ying < 0) return "";
+
+  static const char* PLAIN[5] = {
+    "双方旗鼓相当，",   // 0 比和
+    "你方在付出，",     // 1 世生应
+    "对方在帮你，",     // 2 应生世
+    "你方占上风，",     // 3 世克应
+    "对方占上风，",     // 4 应克世
+  };
+  return PLAIN[five_elem_relation(chart->lines[shi].wuxing,
+                                  chart->lines[ying].wuxing)];
+}
+
 // ===== 八卦辅助数据 =====
 const char* TRIGRAM_NAMES[8] = {"乾","兑","离","震","巽","坎","艮","坤"};
 const char* TRIGRAM_SYMBOLS[8] = {"☰","☱","☲","☳","☴","☵","☶","☷"};

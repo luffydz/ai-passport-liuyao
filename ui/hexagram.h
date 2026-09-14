@@ -138,3 +138,8 @@ int getYongShenLine(uint8_t catIdx, const liuyao_chart_t *chart);
 const char *getLinePosPlain(uint8_t lineIdx);                       // 爻位白话
 const char *getElemRelationPlain(uint8_t upper, uint8_t lower,       // 五行走向白话
                                  uint8_t movingLine);
+
+// 世应关系的白话（世 = 你自己，应 = 对方）。
+// 取世、应两爻的五行论生克，描述【双方力量对比】；同样不下吉凶断语。
+// 卦里找不到世或应时返回空串。返回例："你方占上风，"
+const char *getShiYingPlain(const liuyao_chart_t *chart);
