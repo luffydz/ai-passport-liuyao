@@ -1,0 +1,7 @@
+A pocket I Ching (Liu Yao) divination set for AI Passport. It opens straight into the reading: pick what you're asking about — work, money, love — set the date, then hold the button to charge and release to toss three coins. Six tosses build your hexagram, and because the force of your press feeds the randomness, no two casts come out the same.
+
+Page through the reading: the primary hexagram shows where things stand, the changing hexagram shows where they're heading, and each classical line is followed by a plain-language explanation, so you don't need to read classical Chinese to get the gist. The number of changing lines decides which text to read — the final page says so outright. That page also offers advice on the matter you asked about.
+
+The coin sound can be lowered or muted and your setting is remembered, and the screen quietly dims into a ring of trigrams when left alone. Everything runs offline — no network, no uploads, nothing leaves the device.
+
+(Cover is AI-generated artwork; gameplay images are actual UI renders, not device photographs.)

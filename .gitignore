@@ -1,0 +1,18 @@
+# ---- 构建缓存（不要进版本库）----
+fw/build/
+sim/build/
+fw/managed_components/
+fw/sdkconfig
+fw/sdkconfig.old
+fw/dist/
+sim/out/
+
+# ---- 二进制产物（固件 / 截图）不进库 ----
+*.bin
+
+# ---- 系统 / 编辑器 ----
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
