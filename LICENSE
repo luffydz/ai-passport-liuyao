@@ -2,10 +2,6 @@ MIT License
 
 Copyright (c) 2026 luffydz
 Copyright (c) 2026 FoloToy
-  (This project builds on FoloToy/ai-passport, which is MIT-licensed. That
-   copyright is kept here because fw/components/bsp/ is a vendored, unmodified
-   copy of the baseline. Third-party components and their licenses are listed
-   in the README, under "来源与许可".)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
