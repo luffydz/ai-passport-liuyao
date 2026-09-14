@@ -107,11 +107,16 @@ python3 tools/check_font_coverage.py             # 检查有没有漏字（真�
 
 ### 官方布局校验（可选）
 
+官方仓库里有一个校验脚本，确认合并包满足**受保护 Flash 布局**（`cardid` 分区必须
+是空白 `0xFF`，不得覆盖设备身份）。本仓库不含这个脚本；有的话 `build.sh` 会自动
+调用它，没有则跳过并提示。
+
+想启用的话，从 [folotoy/ai-passport](https://github.com/folotoy/ai-passport) 取得
+`tools/verify_firmware.py`，放在本项目**上一层的** `ai-passport/tools/` 下即可：
+
 ```bash
 python3 ../ai-passport/tools/verify_firmware.py fw/build
 ```
-
-这个脚本来自官方仓库，`build.sh` 里已自动调用它。
 
 ## 一些设计说明
 

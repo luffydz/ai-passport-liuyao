@@ -28,9 +28,18 @@ idf.py merge-bin -o "$PWD/build/$FULL_BIN"
 # 「受保护 cardid 分区必须全是 0xFF（不得覆盖设备身份）」这条底线，
 # 临时建一个同名软链指向我们的包（只是链接，不复制内容）。
 ln -sf "$FULL_BIN" "build/FoloToy-AI-Passport-full.bin"
-# 官方校验脚本住在【上层】的 ai-passport 克隆里（那是官方原仓库，不属于本项目）。
-# 本项目已收进 liuyao/，从 liuyao/fw 往上是两层，所以路径是 ../../。
-python3 ../../ai-passport/tools/verify_firmware.py build
+# 官方校验脚本住在【上层】的 ai-passport 克隆里（那是官方原仓库，不属于本项目），
+# 所以从 liuyao/fw 往上是两层。本仓库不包含该脚本 —— 新克隆者没有它时跳过校验，
+# 而不是让整个构建失败（后面还有归档步骤要跑）。
+# 有脚本时它一旦判定不合格就必须失败，这道关不能松。
+VERIFY="../../ai-passport/tools/verify_firmware.py"
+if [ -f "$VERIFY" ]; then
+    python3 "$VERIFY" build
+else
+    echo "提示：未找到官方布局校验脚本，跳过布局校验。"
+    echo "      $VERIFY"
+    echo "      它来自官方仓库 folotoy/ai-passport（本仓库不含）。"
+fi
 
 # ---------------------------------------------------------------------------
 # 归档本次刷机包
