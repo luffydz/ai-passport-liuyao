@@ -1,0 +1,40 @@
+# AI Passport · 六爻 App —— 编译默认配置
+# 基线配置来自 ai-passport/sdkconfig.defaults，此处标注了我们改动的地方。
+
+# --- 目标芯片 ---
+CONFIG_IDF_TARGET="esp32c3"
+# ESP32-C3 无 PSRAM，故不设 CONFIG_SPIRAM
+
+# --- Flash / 分区（与基线一致，cardid@0x356000 是受保护分区，不得移动或覆盖）---
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=n
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# --- 控制台：USB-Serial-JTAG（C3 原生 USB）---
+# 不用 UART0：其默认 TX=GPIO21 与本板背光引脚冲突
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# --- LVGL ---
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+
+# ★ 改动 1：改用 C 库分配器，不用 LVGL 的静态内存池。
+#   原因：本 App 界面实测需要约 29KB，而基线 24KB 静态池的实际可用量只有约 21.7KB
+#   （24576 减去 tlsf 内部开销）—— 池子会在建界面途中耗尽，表现为 LVGL 内部
+#   往 NULL 写（模拟器上已复现：崩在 children[31]，即第 32 个子对象）。
+#   同款坑在官方实录里也有记载：docs/reference/y2lin/meter-ui-smoothing-and-layout.md
+#   （"A white screen at boot can be LVGL pool exhaustion" → 推荐切 C 库分配器）
+#   注意：LV_MEM_SIZE_KILOBYTES 依赖 LV_USE_BUILTIN_MALLOC，选 CLIB 后不能再设它。
+CONFIG_LV_USE_CLIB_MALLOC=y
+
+# 中文字体已静态化编进 flash（ui/fonts/，约 200KB，走 XIP 不占 RAM），
+# 因此不需要 FreeType（默认即关闭）。
+
+# --- 系统 ---
+CONFIG_FREERTOS_HZ=1000
+
+# --- 不启用蓝牙/Wi-Fi：本 App 纯本地，省 flash 与 RAM ---

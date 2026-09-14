@@ -1,0 +1,25 @@
+# ---- 构建产物（可完全重建）----
+build/
+build-static/
+sdkconfig.old
+
+# ESP-IDF 托管组件：首次 idf.py build 时自动下载，不入库
+# （注意：模拟器编译也用这份 LVGL，所以新克隆后要先编一次固件）
+managed_components/
+
+# ---- 运行时/渲染产物 ----
+sim/out/
+fw/dist/
+
+# ---- 出图原始文件（含水印，已裁切出版 liuyao-cover.png）----
+fw/cover/Elegant_*.png
+
+# ---- 源字体与音效（只用于重新生成字库，不入固件；授权待确认，暂不公开分发）----
+# 生成好的字库在 ui/fonts/ 里，已在库内，编译不受影响。详见 assets/README.md
+assets/fonts/
+assets/sounds/
+
+# ---- 系统与编辑器 ----
+.DS_Store
+.vscode/
+.idea/
