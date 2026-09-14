@@ -72,11 +72,21 @@ add_executable(sim
     "${UI_DIR}/app_ui.c"
     "${UI_DIR}/views_demo.c"
     "${UI_DIR}/view_liuyao.c"
+    "${UI_DIR}/standby.c"
     host/main.c
     host/sim_port.c
     host/sim_audio.c
     host/capture.c
 )
+
+# 可选：把"待机空闲时间"改短，方便自动回归。
+#   cmake -S . -B build -DSIM_STANDBY_IDLE_MS=6000
+# 为什么要这个口子：稳到待机需要"最后 60 秒没按键"，而脚本模式下按键都排在开头，
+# 没法构造"待机之后再按键"的场景，除非把空闲时间压到比按键间隔还短。
+# 不传则用固件的 60 秒（ui/standby.c 的默认值）。
+if(DEFINED SIM_STANDBY_IDLE_MS)
+    target_compile_definitions(sim PRIVATE STANDBY_IDLE_MS=${SIM_STANDBY_IDLE_MS})
+endif()
 
 # ---------------------------------------------------------------------------
 # 字体来源二选一：

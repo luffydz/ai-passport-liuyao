@@ -10,6 +10,7 @@
 #include "ui_pixel.h"
 #include "views_demo.h"
 #include "view_liuyao.h"
+#include "standby.h"
 #include "lvgl.h"
 
 #include <stddef.h>
@@ -91,6 +92,7 @@ void app_ui_start(void)
 {
     if (!app_port_lvgl_lock(1000)) return;
     liuyao_enter();          // 直接进六爻 App
+    standby_init();          // 待机图层：建在最上层，跨页面存活
     app_port_lvgl_unlock();
 }
 
@@ -105,6 +107,15 @@ void app_ui_enter_menu(void)
 void app_ui_key(app_key_t key, app_key_ev_t ev)
 {
     if (!app_port_lvgl_lock(500)) return;
+
+    // 待机中：这一次按键只用来唤醒，直接丢掉不再往下分发。
+    // 不分发是因为从待机按下的键，用户本意是"先看一眼"，不是"按这个键"——
+    // 否则在解卦页按一下 OK 会顺手翻页，在摇卦页更会直接开始蓄力。
+    if (standby_wake()) {
+        app_port_lvgl_unlock();
+        return;
+    }
+    standby_note_key();      // 有按键 = 有人，重置空闲计时
 
     if (s_mode == APP_MODE_LIUYAO) {
         liuyao_key(key, ev);

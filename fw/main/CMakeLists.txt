@@ -15,6 +15,7 @@ idf_component_register(
         "${UI_DIR}/app_ui.c"
         "${UI_DIR}/views_demo.c"
         "${UI_DIR}/view_liuyao.c"
+        "${UI_DIR}/standby.c"         # 待机画面（八卦环 + 背光压暗）
         "${UI_DIR}/hexagram.c"        # 64 卦数据与算法（纯计算）
         "${UI_DIR}/ganzhi.c"          # 历法层：公历 → 干支/月建/旬空/六神/旺衰
         "${UI_DIR}/liuyao_sound.c"
