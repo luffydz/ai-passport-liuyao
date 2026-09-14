@@ -23,3 +23,8 @@ assets/sounds/
 .DS_Store
 .vscode/
 .idea/
+
+# clangd 索引等 IDE 缓存。
+# 注意：gitignore 【不支持行内注释】—— 写成 ".cache/  # 注释" 会被当成一个
+# 字面模式，等于没忽略（这里踩过一次，fw/.cache 下上千个 .idx 全被 git 收进来）。
+.cache/
