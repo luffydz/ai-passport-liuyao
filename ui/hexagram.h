@@ -61,15 +61,21 @@ const char *getCategoryYongShen(uint8_t catIdx);
 
 // 白话解释与类别建议
 const char *getHexagramInterp(uint8_t upper, uint8_t lower);
-const char *getCategorySuggestion(uint8_t cat, bool yang);
 
 // ---------------------------------------------------------------------------
-// 断卦扩充维度
+// 事由建议 —— 按【用神旺衰档位】选句
 //
-// 为什么需要：只用 getCategorySuggestion() 的话，锁定一个事由后整张表
-// 只有 2 条（阴阳各一），连起 7、8 次会反复看到同样的话。
-// 下面两个维度与「事由类别」彼此独立，乘起来把断语变体从 2 提到 60（单类别）。
+// 早先这行按「事由 × 动爻阴阳」查表，8×2 = 16 条。两个毛病：
+//   ① 阴阳与"该进该守"没有必然关系 —— 用神明明休囚无力，只要动爻是阳，
+//      照样输出"宜积极进取"，跟上面几行打架；
+//   ② 锁定一个事由后只有 2 种说法，连起几次就撞同一句。
+// 现在改按旺衰档位取句，8×5 = 40 条：旺则放手、死则停手，
+// 与「力量」那行同源，不会再打架，重复率也降下来。
+//
+// level: 0旺 1相 2休 3囚 4死（与 ganzhi_wang_shuai_level 同序）；
+//        传 -1（算不出旺衰）时按 2休 处理。
 // ---------------------------------------------------------------------------
+const char *getCategoryAdvice(uint8_t cat, int level);
 
 // 动爻爻位含义（六爻常法：爻位象征事情所处阶段）。lineIdx 0=初 … 5=上。
 const char *getLinePosMeaning(uint8_t lineIdx);

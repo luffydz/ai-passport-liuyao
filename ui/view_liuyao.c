@@ -859,67 +859,75 @@ static void result_show(void)
         break;
     }
     default: {  // 断卦：动爻 + 卦象 + 断语（最后那句就是"答案"）
+        // 版面按「一条原文 / 紧跟它自己的白话」成对排，共 11 行（行距 22px）：
+        //   动爻 · 爻辞原文 · 爻辞白话 · 本卦 · 本卦白话 · 变卦 · 变卦白话
+        //   · 力量 · 虚实 · 双方 · 建议
+        // 为什么本卦/变卦各跟一句白话：这两句原本挤在一行里，读者分不清哪半句在
+        // 说本卦、哪半句在说变卦。拆开贴到各自卦名下面，就不会认错对象了。
         static char pos[24];
         lv_snprintf(pos, sizeof(pos), "%s 动", getLineName(s_moving, is_yang));
-        center_label(s_scr, pos, th_font_body(), TH_GOLD, 40);
+        center_label(s_scr, pos, th_font_body(), TH_GOLD, 34);
 
         lv_obj_t *lab = th_label(s_scr, getLineJudgment(s_upper, s_lower, s_moving),
                                  th_font_body(), TH_TEXT);
         lv_obj_set_width(lab, 224);
         lv_obj_set_style_text_align(lab, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 70);
+        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 56);
 
         // 爻辞白话：古文原文下面紧跟一句人话。
         // 原文用 TH_TEXT（米金，偏暗），白话用 TH_GOLD（亮金）——
-        // 视线上一暗一亮的对照，能一眼看出哪行是解释。
+        // 视线上一暗一亮的对照，能一眼看出哪行是解释哪行的。
         // 宽度 224px ÷ 18px = 12 字，所以每条白话都 ≤12 字（超了会折行顶掉下面）。
         lv_obj_t *plain = th_label(s_scr, getLineJudgmentPlain(s_upper, s_lower, s_moving),
                                    th_font_body(), TH_GOLD);
         lv_obj_set_width(plain, 224);
         lv_obj_set_style_text_align(plain, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(plain, LV_ALIGN_TOP_MID, 0, 98);
+        lv_obj_align(plain, LV_ALIGN_TOP_MID, 0, 78);
 
-        // 原来这里有一行事由标签，已去掉：断语最后一行本来就写着事由
-        // （"事业宜积极进取…"），重复显示。省下的这一行给了上面的白话。
-
-        static char v_ben[64], v_bian[64];
+        // —— 本卦（现状）+ 它的白话 ——
+        // 爻位说"事情走到哪一步了"，是现状；五行走向说"接下来顺不顺"，是趋势。
+        static char v_ben[64], v_bian[64], p_ben[32], p_bian[32];
         lv_snprintf(v_ben, sizeof(v_ben), "本卦 %s", getHexagramInterp(s_upper, s_lower));
+        lv_snprintf(p_ben, sizeof(p_ben), "%s，", getLinePosPlain(s_moving));
+
+        // —— 变卦（趋势）+ 它的白话 ——
         // 动爻必然使上下卦之一变化，所以正常情况下变卦一定与本卦不同；
         // 仍留一个防御分支，避免万一相同时显示两行一样的白话。
         lv_snprintf(v_bian, sizeof(v_bian), "变卦 %s",
                     (cu == s_upper && cl == s_lower) ? "六爻安静"
                                                       : getHexagramInterp(cu, cl));
+        lv_snprintf(p_bian, sizeof(p_bian), "%s，",
+                    getElemRelationPlain(s_upper, s_lower, s_moving));
 
-        // ⚠ 这两行必须用 18px（th_font_body）：白话里的字只收进了 18px 字库，
+        // ⚠ 这些行必须用 18px（th_font_body）：白话里的字只收进了 18px 字库，
         //   16px 小字库没有它们 —— 真机会显示方块（模拟器用 FreeType 看不出来）。
         //   用 tools/check_font_coverage.py 可以查这类问题。
-        lv_obj_t *l1 = th_label(s_scr, v_ben, th_font_body(), TH_TEXT);
-        lv_obj_set_width(l1, 224);
-        lv_obj_set_style_text_align(l1, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(l1, LV_ALIGN_TOP_MID, 0, 126);
+        const struct { const char *txt; uint32_t col; } pairs[4] = {
+            { v_ben,  TH_TEXT },   // 本卦
+            { p_ben,  TH_GOLD },   // 　└ 本卦的白话
+            { v_bian, TH_TEXT },   // 变卦
+            { p_bian, TH_GOLD },   // 　└ 变卦的白话
+        };
+        for (int i = 0; i < 4; i++) {
+            lv_obj_t *t = th_label(s_scr, pairs[i].txt, th_font_body(), pairs[i].col);
+            lv_obj_set_width(t, 224);
+            lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 100 + i * 22);
+        }
 
-        lv_obj_t *l2 = th_label(s_scr, v_bian, th_font_body(), TH_TEXT);
-        lv_obj_set_width(l2, 224);
-        lv_obj_set_style_text_align(l2, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(l2, LV_ALIGN_TOP_MID, 0, 152);
-
-        // ★ 断语五行 —— 这是"答案"，每行都随卦/随日/随事由变，而且都要说人话。
+        // ★ 断语四行 —— 这是"答案"，每行都随卦/随日/随事由变，而且都要说人话。
         //   术语版（"用神官鬼土休、日辰克害"）只有懂六爻的人才看得懂，所以这里
-        //   统一用白话（getLinePosPlain / getElemRelationPlain / *_plain）。
-        //   专业术语不丢：卦盘页仍然完整显示纳甲、六亲、世应、六神、旺衰。
-        //   第 1 行 趋势：爻位(6) × 五行走向(5)                      = 30 种
-        //   第 2 行 力量：旺衰(5) × 日辰作用(5)，按【月建/日辰】算    = 25 种
-        //   第 3 行 虚实：用神是否落旬空                              = 2 种
-        //   第 4 行 双方：世（自己）与应（对方）的五行生克            = 5 种
-        //   第 5 行 倾向：事由类别 × 动爻阴阳                          = 每类别 2 条
-        static char v1[64], v2[80], v3[64], v4[64], v5[64];
-        lv_snprintf(v1, sizeof(v1), "%s，%s，",
-                    getLinePosPlain(s_moving),
-                    getElemRelationPlain(s_upper, s_lower, s_moving));
+        //   统一用白话。专业术语不丢：卦盘页仍完整显示纳甲、六亲、世应、六神、旺衰。
+        //   力量：旺衰(5) × 日辰作用(5)，按【月建/日辰】算   = 25 种
+        //   虚实：用神是否落旬空                            = 2 种
+        //   双方：世（自己）与应（对方）的五行生克           = 5 种
+        //   建议：事由(8) × 用神旺衰档(5)                   = 40 种
+        static char v2[80], v3[64], v4[64], v5[64];
 
         liuyao_chart_t ch;
         getLiuyaoChart(s_upper, s_lower, s_moving, &ch);
         const int ys = getYongShenLine((uint8_t)s_cat, &ch);
+        int str_level = -1;                  // 用神旺衰档位：0旺 1相 2休 3囚 4死
         v2[0] = 0;
         if (s_gz_ok && ys >= 0) {
             const int wx = ganzhi_wuxing_index(ch.lines[ys].wuxing);
@@ -928,6 +936,7 @@ static void result_show(void)
                 lv_snprintf(v2, sizeof(v2), "%s，%s，",
                             ganzhi_wang_shuai_plain(wx, s_gz.month_zhi),
                             ganzhi_day_effect_plain(wx, &s_gz));
+                str_level = ganzhi_wang_shuai_level(wx, s_gz.month_zhi);
             }
         }
 
@@ -945,17 +954,19 @@ static void result_show(void)
         // 双方：世（你自己）与应（对方）的五行生克
         lv_snprintf(v4, sizeof(v4), "%s", getShiYingPlain(&ch));
 
+        // 建议：按【用神旺衰】取句 —— 旺则放手、死则停手。与上面"力量"那行同源，
+        // 不会再出现"势头偏弱"却配"宜积极进取"这种自相矛盾。
         lv_snprintf(v5, sizeof(v5), "%s",
-                    getCategorySuggestion((uint8_t)s_cat, is_yang));
+                    getCategoryAdvice((uint8_t)s_cat, str_level));
 
-        const char *lines[5] = { v1, v2, v3, v4, v5 };
-        for (int i = 0; i < 5; i++) {
+        const char *lines[4] = { v2, v3, v4, v5 };
+        for (int i = 0; i < 4; i++) {
             if (!lines[i][0]) continue;
             lv_obj_t *t = th_label(s_scr, lines[i], th_font_body(), TH_GOLD);
             lv_obj_set_width(t, 220);
             lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-            // 22px 行距：五行要塞进 172..280 这一段，再宽就顶到底部提示条了
-            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 172 + i * 22);
+            // 从 188 起、行距 22px：四行落到 188..276，正好在底部提示条之上
+            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 188 + i * 22);
         }
         break;
     }

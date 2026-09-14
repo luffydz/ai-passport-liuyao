@@ -202,6 +202,11 @@ const char *ganzhi_day_effect_plain(int wuxing, const ganzhi_t *g)
     return (i < 0) ? "" : N[i];
 }
 
+int ganzhi_wang_shuai_level(int wuxing, int month_zhi)
+{
+    return wang_shuai_index(wuxing, month_zhi);
+}
+
 int ganzhi_wuxing_index(const char *name)
 {
     if (!name) return -1;

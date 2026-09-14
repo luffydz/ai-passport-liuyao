@@ -67,5 +67,9 @@ const char *ganzhi_day_effect(int wuxing, const ganzhi_t *g);
 const char *ganzhi_wang_shuai_plain(int wuxing, int month_zhi);
 const char *ganzhi_day_effect_plain(int wuxing, const ganzhi_t *g);
 
+// 旺衰的【档位下标】：0旺 1相 2休 3囚 4死（力量由强到弱）；无法判定返回 -1。
+// 需要"档位"而不是"名字"时用它 —— 例如按旺衰挑建议文案。
+int ganzhi_wang_shuai_level(int wuxing, int month_zhi);
+
 // 五行名（"木"/"火"/"土"/"金"/"水"）→ 序号 0..4；认不出返回 -1
 int ganzhi_wuxing_index(const char *name);
