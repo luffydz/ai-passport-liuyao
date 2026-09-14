@@ -55,7 +55,7 @@ typedef enum {
 #define FLIP_MS         700   // 摇卦动画时长
 
 // ---- 解卦页 ----
-#define RESULT_PAGES   5
+#define RESULT_PAGES   6
 #define RESULT_MINI_H  10
 #define RESULT_MINI_STEP 18
 #define RESULT_MINI_W  80
@@ -766,7 +766,10 @@ static void result_show(void)
     // 清掉旧内容（保留外框与提示条由重建统一处理）
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
 
-    static const char *TITLES[RESULT_PAGES] = { "本 卦", "卦 盘", "卦 辞", "变 卦", "断 卦" };
+    // 第 5 页"断卦"讲卦说了什么（爻辞 + 本卦/变卦），第 6 页"断语"给四段结论。
+    // 拆成两页是因为挤在一页要压到 22px 行距，读起来太密。
+    static const char *TITLES[RESULT_PAGES] = { "本 卦", "卦 盘", "卦 辞", "变 卦",
+                                                "断 卦", "断 语" };
     s_scr = th_screen_create();
     lv_obj_t *hdr = th_label(s_scr, TITLES[s_result_page], th_font_small(), TH_DIM);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 12);
@@ -858,21 +861,18 @@ static void result_show(void)
         }
         break;
     }
-    default: {  // 断卦：动爻 + 卦象 + 断语（最后那句就是"答案"）
-        // 版面按「一条原文 / 紧跟它自己的白话」成对排，共 11 行（行距 22px）：
-        //   动爻 · 爻辞原文 · 爻辞白话 · 本卦 · 本卦白话 · 变卦 · 变卦白话
-        //   · 力量 · 虚实 · 双方 · 建议
-        // 为什么本卦/变卦各跟一句白话：这两句原本挤在一行里，读者分不清哪半句在
-        // 说本卦、哪半句在说变卦。拆开贴到各自卦名下面，就不会认错对象了。
+    case 4: {   // 断卦：动爻 + 爻辞 + 本卦/变卦（各带自己的白话）
+        // 这一页只讲"卦说了什么"。原先它还得挤下四段断语（共 11 行、行距压到
+        // 22px），现在断语移到下一页，这里放松到 26px，读起来不费劲。
         static char pos[24];
         lv_snprintf(pos, sizeof(pos), "%s 动", getLineName(s_moving, is_yang));
-        center_label(s_scr, pos, th_font_body(), TH_GOLD, 34);
+        center_label(s_scr, pos, th_font_body(), TH_GOLD, 48);
 
         lv_obj_t *lab = th_label(s_scr, getLineJudgment(s_upper, s_lower, s_moving),
                                  th_font_body(), TH_TEXT);
         lv_obj_set_width(lab, 224);
         lv_obj_set_style_text_align(lab, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 56);
+        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 74);
 
         // 爻辞白话：古文原文下面紧跟一句人话。
         // 原文用 TH_TEXT（米金，偏暗），白话用 TH_GOLD（亮金）——
@@ -882,7 +882,7 @@ static void result_show(void)
                                    th_font_body(), TH_GOLD);
         lv_obj_set_width(plain, 224);
         lv_obj_set_style_text_align(plain, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(plain, LV_ALIGN_TOP_MID, 0, 78);
+        lv_obj_align(plain, LV_ALIGN_TOP_MID, 0, 100);
 
         // —— 本卦（现状）+ 它的白话 ——
         // 爻位说"事情走到哪一步了"，是现状；五行走向说"接下来顺不顺"，是趋势。
@@ -912,10 +912,13 @@ static void result_show(void)
             lv_obj_t *t = th_label(s_scr, pairs[i].txt, th_font_body(), pairs[i].col);
             lv_obj_set_width(t, 224);
             lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 100 + i * 22);
+            // 132 起、26px：本卦/变卦两组之间自然留出一行空白，看得出配对关系
+            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 132 + i * 26);
         }
-
-        // ★ 断语四行 —— 这是"答案"，每行都随卦/随日/随事由变，而且都要说人话。
+        break;
+    }
+    default: {  // 断语：力量 / 虚实 / 双方 / 建议（"答案"在这一页）
+        // ★ 每行都随卦/随日/随事由变，而且都要说人话。
         //   术语版（"用神官鬼土休、日辰克害"）只有懂六爻的人才看得懂，所以这里
         //   统一用白话。专业术语不丢：卦盘页仍完整显示纳甲、六亲、世应、六神、旺衰。
         //   力量：旺衰(5) × 日辰作用(5)，按【月建/日辰】算   = 25 种
@@ -965,8 +968,8 @@ static void result_show(void)
             lv_obj_t *t = th_label(s_scr, lines[i], th_font_body(), TH_GOLD);
             lv_obj_set_width(t, 220);
             lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-            // 从 188 起、行距 22px：四行落到 188..276，正好在底部提示条之上
-            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 188 + i * 22);
+            // 这一页只有四行，可以放松：96 起、26px
+            lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 96 + i * 26);
         }
         break;
     }
