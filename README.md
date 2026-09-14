@@ -160,6 +160,7 @@ python3 ../ai-passport/tools/verify_firmware.py fw/build
 
 ## 来源与许可
 
+- **本仓库**：MIT，见 [LICENSE](LICENSE)。其中保留了 FoloToy 的版权声明 —— 因为下面的 `bsp` 是未改动的基线代码。
 - **基线**：[FoloToy/ai-passport](https://github.com/folotoy/ai-passport)（MIT，Copyright © 2026 FoloToy）。`fw/components/bsp/` 为 vendored 基线代码，未改动。
 - **LVGL**：MIT（由 ESP-IDF 组件管理器下载，不入库）。
 - **正文思源黑体**（`assets/fonts/SourceHanSansCN-Medium.otf`）：SIL Open Font License 1.1。
