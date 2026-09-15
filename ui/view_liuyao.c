@@ -217,7 +217,7 @@ static void build_welcome(void)
     lv_obj_align(s_vol_label, LV_ALIGN_TOP_MID, 0, TH_FRAME_INSET + 6);
     welcome_vol_refresh();
 
-    th_hint_create(s_scr, "按 OK 起卦  ·  上下调音效");
+    th_hint_create(s_scr, "按 OK 起卦 · 上下调音效\n长按 OK 切换功能");
     lv_screen_load(s_scr);
 }
 

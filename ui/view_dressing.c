@@ -255,7 +255,7 @@ static void build_welcome(void)
     lv_obj_t *sub = th_label(s_scr, "五  行  择  色", th_font_tiny(), TH_DIM);
     lv_obj_align(sub, LV_ALIGN_CENTER, 0, 40 - th_vshift(th_font_tiny(), ' '));
 
-    th_hint_create(s_scr, "按 OK 选日期");
+    th_hint_create(s_scr, "按 OK 选日期\n长按 OK 切换功能");
     lv_screen_load(s_scr);
 }
 
